@@ -87,7 +87,7 @@ namespace :sidekiq do
     end
   end
 
-  def start_sidekiq(pid_file, idx = 0)
+  def start_sidekiq(pid_file, idx = 0, server)
     args = []
     args.push "--index #{idx}"
     args.push "--pidfile #{pid_file}"
@@ -95,11 +95,13 @@ namespace :sidekiq do
     args.push "--logfile #{fetch(:sidekiq_log)}" if fetch(:sidekiq_log)
     args.push "--require #{fetch(:sidekiq_require)}" if fetch(:sidekiq_require)
     args.push "--tag #{fetch(:sidekiq_tag)}" if fetch(:sidekiq_tag)
-    Array(fetch(:sidekiq_queue)).each do |queue|
+    sidekiq_queues = server.properties.fetch(:sidekiq_queue) || fetch(:sidekiq_queue)
+    Array(sidekiq_queues).each do |queue|
       args.push "--queue #{queue}"
     end
     args.push "--config #{fetch(:sidekiq_config)}" if fetch(:sidekiq_config)
-    args.push "--concurrency #{fetch(:sidekiq_concurrency)}" if fetch(:sidekiq_concurrency)
+    sidekiq_concurrency = server.properties.fetch(:sidekiq_concurrency) || fetch(:sidekiq_concurrency)
+    args.push "--concurrency #{sidekiq_concurrency}" if sidekiq_concurrency
     if process_options = fetch(:sidekiq_options_per_process)
       args.push process_options[idx]
     end
@@ -155,9 +157,9 @@ namespace :sidekiq do
 
   desc 'Start sidekiq'
   task :start do
-    on roles fetch(:sidekiq_role) do
+    on roles fetch(:sidekiq_role) do |server|
       for_each_process do |pid_file, idx|
-        start_sidekiq(pid_file, idx) unless pid_process_exists?(pid_file)
+        start_sidekiq(pid_file, idx, server) unless pid_process_exists?(pid_file)
       end
     end
   end
@@ -170,12 +172,12 @@ namespace :sidekiq do
 
   desc 'Rolling-restart sidekiq'
   task :rolling_restart do
-    on roles fetch(:sidekiq_role) do
+    on roles fetch(:sidekiq_role) do |server|
       for_each_process(true) do |pid_file, idx|
         if pid_process_exists?(pid_file)
           stop_sidekiq(pid_file)
         end
-        start_sidekiq(pid_file, idx)
+        start_sidekiq(pid_file, idx, server)
       end
     end
   end
@@ -195,10 +197,10 @@ namespace :sidekiq do
   desc 'Respawn missing sidekiq processes'
   task :respawn do
     invoke 'sidekiq:cleanup'
-    on roles fetch(:sidekiq_role) do
+    on roles fetch(:sidekiq_role) do |server|
       for_each_process do |pid_file, idx|
         unless pid_file_exists?(pid_file)
-          start_sidekiq(pid_file, idx)
+          start_sidekiq(pid_file, idx, server)
         end
       end
     end
